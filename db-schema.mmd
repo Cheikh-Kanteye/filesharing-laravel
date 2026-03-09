@@ -1,0 +1,118 @@
+---
+config:
+  layout: elk
+  look: classic
+  theme: base
+---
+erDiagram
+	direction LR
+	users {
+		bigint id PK ""  
+		string name  ""  
+		string email UK ""  
+		string password  ""  
+		string avatar  ""  
+		string bio  ""  
+		timestamp email_verified_at  ""  
+		string remember_token  ""  
+		timestamps created_at  ""  
+		timestamps updated_at  ""  
+	}
+
+	spaces {
+		bigint id PK ""  
+		string name  ""  
+		text description  ""  
+		bigint owner_id FK ""  
+		string color  ""  
+		boolean is_public  ""  
+		string join_token UK ""  
+		timestamps created_at  ""  
+		timestamps updated_at  ""  
+	}
+
+	space_members {
+		bigint id PK ""  
+		bigint space_id FK ""  
+		bigint user_id FK ""  
+		enum role  "member|admin"  
+		timestamps created_at  ""  
+		timestamps updated_at  ""  
+	}
+
+	folders {
+		bigint id PK ""  
+		string name  ""  
+		bigint space_id FK ""  
+		bigint user_id FK ""  
+		bigint parent_id FK ""  
+		timestamps created_at  ""  
+		timestamps updated_at  ""  
+	}
+
+	files {
+		bigint id PK ""  
+		bigint user_id FK ""  
+		bigint space_id FK ""  
+		bigint folder_id FK ""  
+		string title  ""  
+		text description  ""  
+		string original_name  ""  
+		string file_path  ""  
+		string mime_type  ""  
+		bigint size  ""  
+		string share_token UK ""  
+		timestamp share_expires_at  ""  
+		int downloads_count  ""  
+		tsvector search_vector  ""  
+		timestamps created_at  ""  
+		timestamps updated_at  ""  
+	}
+
+	tags {
+		bigint id PK ""  
+		string name  ""  
+		string color  ""  
+		bigint user_id FK ""  
+		timestamps created_at  ""  
+		timestamps updated_at  ""  
+	}
+
+	file_tag {
+		bigint file_id FK ""  
+		bigint tag_id FK ""  
+	}
+
+	invitations {
+		bigint id PK ""  
+		bigint space_id FK ""  
+		bigint invited_by FK ""  
+		string email  ""  
+		string token UK ""  
+		timestamp accepted_at  ""  
+		timestamp expires_at  ""  
+		timestamps created_at  ""  
+		timestamps updated_at  ""  
+	}
+
+	password_reset_tokens {
+		string email PK ""  
+		string token  ""  
+		timestamp created_at  ""  
+	}
+
+	users ||--o{ spaces : "possède"
+	users ||--o{ space_members : "rejoint"
+	spaces ||--o{ space_members : "regroupe"
+	users ||--o{ folders : "crée"
+	spaces ||--o{ folders : "contient"
+	folders ||--o{ folders : "imbrique"
+	users ||--o{ files : "uploade"
+	spaces ||--o{ files : "héberge"
+	folders ||--o{ files : "organise"
+	users ||--o{ tags : "définit"
+	files ||--o{ file_tag : "est étiqueté par"
+	tags ||--o{ file_tag : "étiquette"
+	spaces ||--o{ invitations : "génère"
+	users ||--o{ invitations : "envoie"
+	users ||--o{ password_reset_tokens : "demande"
