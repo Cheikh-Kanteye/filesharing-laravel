@@ -2,12 +2,14 @@
 
 namespace App\Providers;
 
+use App\Http\View\Composers\SidebarComposer;
 use App\Models\File;
 use App\Models\Space;
 use App\Policies\FilePolicy;
 use App\Policies\SpacePolicy;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -22,5 +24,7 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Space::class, SpacePolicy::class);
         Gate::policy(File::class, FilePolicy::class);
         Paginator::useTailwind();
+
+        View::composer('layouts.app', SidebarComposer::class);
     }
 }

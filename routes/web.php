@@ -43,6 +43,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/spaces', [SpaceController::class, 'index'])->name('spaces.index');
     Route::get('/spaces/create', [SpaceController::class, 'create'])->name('spaces.create');
     Route::post('/spaces', [SpaceController::class, 'store'])->name('spaces.store');
+    Route::get('/spaces/explore', [SpaceController::class, 'explore'])->name('spaces.explore');
     Route::get('/spaces/join/{token}', [SpaceController::class, 'joinViaLink'])->name('spaces.join');
 
     // Invitations reçues
@@ -70,6 +71,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/spaces/{space}/edit', [SpaceController::class, 'edit'])->name('spaces.edit');
     Route::put('/spaces/{space}', [SpaceController::class, 'update'])->name('spaces.update');
     Route::delete('/spaces/{space}', [SpaceController::class, 'destroy'])->name('spaces.destroy');
+    Route::post('/spaces/{space}/join-public', [SpaceController::class, 'joinPublic'])->name('spaces.join-public');
     Route::post('/spaces/{space}/invite', [SpaceController::class, 'invite'])->name('spaces.invite');
     Route::delete('/spaces/{space}/leave', [SpaceController::class, 'leave'])->name('spaces.leave');
     Route::delete('/spaces/{space}/members/{user}', [SpaceController::class, 'removeMember'])->name('spaces.members.remove');

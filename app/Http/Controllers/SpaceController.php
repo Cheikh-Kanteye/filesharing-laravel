@@ -9,17 +9,68 @@ use App\Models\Space;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class SpaceController extends Controller
 {
     use AuthorizesRequests;
 
+    public function explore(Request $request)
+    {
+        $user  = Auth::user();
+        $query = trim($request->get('q', ''));
+
+        $memberSpaceIds = $user->ownedSpaces()->pluck('spaces.id')
+            ->merge($user->joinedSpaces()->pluck('spaces.id'));
+
+        $spaces = Space::where('is_public', true)
+            ->whereNotIn('id', $memberSpaceIds)
+            ->withCount(['files', 'members'])
+            ->with('owner:id,name')
+            ->when($query, fn($q) => $q->where(function ($q) use ($query) {
+                $q->where('name', 'ilike', "%{$query}%")
+                  ->orWhere('description', 'ilike', "%{$query}%");
+            }))
+            ->latest()
+            ->paginate(15)
+            ->withQueryString();
+
+        return view('spaces.explore', compact('spaces', 'query'));
+    }
+
+    public function joinPublic(Space $space)
+    {
+        abort_unless($space->is_public, 403, 'Ce space n\'est pas public.');
+
+        $user = Auth::user();
+
+        if ($space->isMember($user)) {
+            return redirect()->route('spaces.show', $space)
+                ->with('success', 'Vous êtes déjà membre de ce space.');
+        }
+
+        $space->members()->syncWithoutDetaching([$user->id => ['role' => 'member']]);
+
+        Cache::forget("user:{$user->id}:spaces");
+        Cache::forget("user:{$user->id}:sidebar:recent_spaces");
+        Cache::forget("space:{$space->id}:member:{$user->id}");
+
+        return redirect()->route('spaces.show', $space)
+            ->with('success', 'Vous avez rejoint « ' . $space->name . ' » !');
+    }
+
     public function index()
     {
         $user = Auth::user();
-        $ownedSpaces = $user->ownedSpaces()->withCount(['files', 'members'])->latest()->get();
-        $joinedSpaces = $user->joinedSpaces()->withCount(['files', 'members'])->latest()->get();
+        $uid  = $user->id;
+
+        [$ownedSpaces, $joinedSpaces] = Cache::remember("user:{$uid}:spaces", 300, function () use ($user) {
+            return [
+                $user->ownedSpaces()->withCount(['files', 'members'])->latest()->get(),
+                $user->joinedSpaces()->withCount(['files', 'members'])->latest()->get(),
+            ];
+        });
 
         return view('spaces.index', compact('ownedSpaces', 'joinedSpaces'));
     }
@@ -45,6 +96,11 @@ class SpaceController extends Controller
             'color'       => $data['color'] ?? '#3b82f6',
             'is_public'   => $request->boolean('is_public'),
         ]);
+
+        $uid = Auth::id();
+        Cache::forget("user:{$uid}:spaces");
+        Cache::forget("user:{$uid}:stats");
+        Cache::forget("user:{$uid}:sidebar:recent_spaces");
 
         return redirect()->route('spaces.show', $space)->with('success', 'Space créé avec succès !');
     }
@@ -112,6 +168,8 @@ class SpaceController extends Controller
             'is_public'   => $request->boolean('is_public'),
         ]);
 
+        Cache::forget('user:' . Auth::id() . ':spaces');
+
         return redirect()->route('spaces.show', $space)->with('success', 'Space mis à jour.');
     }
 
@@ -119,6 +177,12 @@ class SpaceController extends Controller
     {
         $this->authorize('delete', $space);
         $space->delete();
+
+        $uid = Auth::id();
+        Cache::forget("user:{$uid}:spaces");
+        Cache::forget("user:{$uid}:stats");
+        Cache::forget("user:{$uid}:sidebar:recent_spaces");
+
         return redirect()->route('spaces.index')->with('success', 'Space supprimé.');
     }
 
@@ -150,17 +214,25 @@ class SpaceController extends Controller
 
         try { broadcast(new InvitationReceivedEvent($invitation)); } catch (\Throwable) {}
 
+        // Invalide le badge d'invitation pour l'invité
+        Cache::forget('invitations:' . md5($data['email']));
+        Cache::forget("user:{$invitee->id}:sidebar:invitations");
+
         return back()->with('success', "Invitation envoyée à {$data['email']}.");
     }
 
     public function myInvitations()
     {
-        $invitations = Invitation::where('email', Auth::user()->email)
-            ->whereNull('accepted_at')
-            ->where('expires_at', '>', now())
-            ->with(['space.owner', 'inviter'])
-            ->latest()
-            ->get();
+        $email = Auth::user()->email;
+
+        $invitations = Cache::remember('invitations:' . md5($email), 300, function () use ($email) {
+            return Invitation::where('email', $email)
+                ->whereNull('accepted_at')
+                ->where('expires_at', '>', now())
+                ->with(['space.owner', 'inviter'])
+                ->latest()
+                ->get();
+        });
 
         return view('invitations.index', compact('invitations'));
     }
@@ -181,6 +253,12 @@ class SpaceController extends Controller
         $invitation->space->members()->syncWithoutDetaching([$user->id => ['role' => 'member']]);
         $invitation->update(['accepted_at' => now()]);
 
+        Cache::forget('invitations:' . md5($user->email));
+        Cache::forget("user:{$user->id}:spaces");
+        Cache::forget("user:{$user->id}:sidebar:recent_spaces");
+        Cache::forget("user:{$user->id}:sidebar:invitations");
+        Cache::forget("space:{$invitation->space_id}:member:{$user->id}");
+
         return redirect()->route('spaces.show', $invitation->space)
             ->with('success', 'Vous avez rejoint « ' . $invitation->space->name . ' » !');
     }
@@ -192,6 +270,10 @@ class SpaceController extends Controller
             ->firstOrFail();
 
         $invitation->delete();
+
+        $uid = Auth::id();
+        Cache::forget('invitations:' . md5(Auth::user()->email));
+        Cache::forget("user:{$uid}:sidebar:invitations");
 
         return redirect()->route('invitations.index')->with('success', 'Invitation refusée.');
     }
@@ -224,6 +306,9 @@ class SpaceController extends Controller
 
         $space->members()->syncWithoutDetaching([$user->id => ['role' => 'member']]);
 
+        Cache::forget("user:{$user->id}:spaces");
+        Cache::forget("space:{$space->id}:member:{$user->id}");
+
         return redirect()->route('spaces.show', $space)
             ->with('success', 'Vous avez rejoint « ' . $space->name . ' » via le lien de partage !');
     }
@@ -232,7 +317,12 @@ class SpaceController extends Controller
 
     public function leave(Space $space)
     {
-        $space->members()->detach(Auth::id());
+        $uid = Auth::id();
+        $space->members()->detach($uid);
+
+        Cache::forget("user:{$uid}:spaces");
+        Cache::forget("space:{$space->id}:member:{$uid}");
+
         return redirect()->route('spaces.index')->with('success', 'Vous avez quitté le space.');
     }
 
@@ -240,6 +330,10 @@ class SpaceController extends Controller
     {
         $this->authorize('update', $space);
         $space->members()->detach($user->id);
+
+        Cache::forget("user:{$user->id}:spaces");
+        Cache::forget("space:{$space->id}:member:{$user->id}");
+
         return back()->with('success', 'Membre retiré du space.');
     }
 }

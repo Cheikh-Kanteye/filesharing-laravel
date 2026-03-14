@@ -9,6 +9,7 @@ use App\Models\Space;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 
 class FileController extends Controller
@@ -65,6 +66,9 @@ class FileController extends Controller
 
         try { broadcast(new FileUploadedEvent($file))->toOthers(); } catch (\Throwable) {}
 
+        // Invalide les stats (compteur fichiers + downloads) pour l'uploader
+        Cache::forget('user:' . Auth::id() . ':stats');
+
         return redirect()->route('spaces.show', $space)->with('success', 'Fichier uploadé avec succès !');
     }
 
@@ -101,6 +105,9 @@ class FileController extends Controller
         $file->delete();
 
         try { broadcast(new FileDeletedEvent($fileId, $spaceId))->toOthers(); } catch (\Throwable) {}
+
+        // Invalide les stats et les résultats de recherche pour l'utilisateur
+        Cache::forget('user:' . Auth::id() . ':stats');
 
         return redirect()->route('spaces.show', $space)->with('success', 'Fichier supprimé.');
     }

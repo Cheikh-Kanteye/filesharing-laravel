@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class Space extends Model
@@ -55,8 +56,22 @@ class Space extends Model
 
     public function isMember(User $user): bool
     {
-        return $this->owner_id === $user->id
-            || $this->members()->where('user_id', $user->id)->exists();
+        if ($this->owner_id === $user->id) {
+            return true;
+        }
+
+        return Cache::remember("space:{$this->id}:member:{$user->id}", 600, function () use ($user) {
+            return $this->members()->where('user_id', $user->id)->exists();
+        });
+    }
+
+    public function clearMemberCache(?int $userId = null): void
+    {
+        if ($userId) {
+            Cache::forget("space:{$this->id}:member:{$userId}");
+        }
+        // Invalide aussi la liste des spaces de chaque membre concerné
+        Cache::forget("user:{$userId}:spaces");
     }
 
     public function getMembersCountAttribute(): int
